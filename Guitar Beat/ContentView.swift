@@ -528,28 +528,52 @@ struct BeatVisualizationView: View {
     var body: some View {
         GeometryReader { geometry in
             let availableWidth = geometry.size.width - 40 // Account for horizontal padding
-            let blockSpacing: CGFloat = totalBeats > 8 ? 4 : 8 // Smaller spacing for many beats
-            let totalSpacing = blockSpacing * CGFloat(totalBeats - 1)
             
-            // Calculate ideal block width with flexible constraints
-            let minBlockWidth: CGFloat = 20  // Smaller minimum for many beats
-            let maxBlockWidth: CGFloat = 120  // Maximum for very few beats
-            let idealBlockWidth = (availableWidth - totalSpacing) / CGFloat(totalBeats)
-            let blockWidth = min(max(idealBlockWidth, minBlockWidth), maxBlockWidth)
+            // Tight spacing for many beats to fit on screen
+            let beatContainerSpacing: CGFloat = {
+                if totalBeats > 12 {
+                    return 5  // Very tight for 13-16 beats
+                } else if totalBeats > 10 {
+                    return 6  // Tight for 11-12 beats
+                } else if totalBeats > 8 {
+                    return 8  // Medium for 9-10 beats
+                } else {
+                    return 14 // Comfortable for 8 or fewer
+                }
+            }()
             
-            // Calculate actual content width (might be less than available)
-            let contentWidth = (blockWidth * CGFloat(totalBeats)) + totalSpacing
+            let totalSpacing = beatContainerSpacing * CGFloat(totalBeats - 1)
+            
+            // Much narrower containers for many beats
+            let minContainerWidth: CGFloat = {
+                if totalBeats > 12 {
+                    return 18  // Very narrow for 13-16 beats
+                } else if totalBeats > 10 {
+                    return 22  // Narrow for 11-12 beats
+                } else {
+                    return 28  // Normal minimum for 10 or fewer
+                }
+            }()
+            
+            let maxContainerWidth: CGFloat = 65  // Maximum width for fewer beats
+            let minContainerHeight: CGFloat = 48 // Minimum height
+            let maxContainerHeight: CGFloat = 70 // Maximum height
+            
+            let idealContainerWidth = (availableWidth - totalSpacing) / CGFloat(totalBeats)
+            let containerWidth = min(max(idealContainerWidth, minContainerWidth), maxContainerWidth)
+            let containerHeight = min(max(containerWidth * 1.2, minContainerHeight), maxContainerHeight) // Slightly taller than wide
             
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: blockSpacing) {
-                    // Render exactly totalBeats blocks (one per beat in the cycle)
+                HStack(spacing: beatContainerSpacing) {
+                    // Render exactly totalBeats containers (one per beat in the cycle)
                     ForEach(0..<totalBeats, id: \.self) { beatIndex in
-                        BeatBlock(
+                        BeatContainer(
                             beatIndex: beatIndex,
                             currentBeat: currentBeat,
                             totalBeats: totalBeats,
                             isPlaying: isPlaying,
-                            blockWidth: blockWidth
+                            containerWidth: containerWidth,
+                            containerHeight: containerHeight
                         )
                         .id(beatIndex)
                     }
@@ -558,98 +582,83 @@ struct BeatVisualizationView: View {
                 .frame(minWidth: geometry.size.width)
             }
         }
-        .frame(height: 50)
+        .frame(height: 95) // Increased to accommodate taller tiles
     }
 }
 
-// MARK: - Beat Block
+// MARK: - Beat Container (3 Horizontal Pill Bars)
 
-struct BeatBlock: View {
-    let beatIndex: Int      // Which beat this block represents (0 to totalBeats-1)
-    let currentBeat: Int    // The currently playing beat
-    let totalBeats: Int     // Total beats in the cycle
-    let isPlaying: Bool     // Whether metronome is playing
-    let blockWidth: CGFloat // Dynamic width based on screen size
+struct BeatContainer: View {
+    let beatIndex: Int        // Which beat this container represents (0 to totalBeats-1)
+    let currentBeat: Int      // The currently playing beat
+    let totalBeats: Int       // Total beats in the cycle
+    let isPlaying: Bool       // Whether metronome is playing
+    let containerWidth: CGFloat  // Width of the container
+    let containerHeight: CGFloat // Height of the container
     
-    // Determine the state of this block
-    private var blockState: BlockState {
-        // When not playing, show all blocks as inactive (purple)
-        if !isPlaying {
-            return .inactive
-        }
-        
-        // When playing, show current as highlighted (green), others as inactive
-        if beatIndex == currentBeat {
-            return .current
-        } else {
-            return .inactive
-        }
+    private let slicesPerBeat = 3
+    private let sliceSpacing: CGFloat = 3 // Keep vertical spacing tight
+    private let pillCornerRadius: CGFloat = 8
+    
+    // Determine if this beat is active
+    private var isActive: Bool {
+        isPlaying && beatIndex == currentBeat
+    }
+    
+    // Determine if this is the first beat (emphasized)
+    private var isFirstBeat: Bool {
+        beatIndex == 0
     }
     
     var body: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .fill(blockState.color)
-            .frame(width: blockWidth, height: blockState.height)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(blockState.borderColor, lineWidth: blockState.borderWidth)
-            )
-            .shadow(color: blockState.shadowColor, radius: blockState.shadowRadius)
+        // Just the 3 horizontal pill bars - no background container
+        VStack(spacing: sliceSpacing) {
+            ForEach(0..<slicesPerBeat, id: \.self) { sliceIndex in
+                HorizontalPill(
+                    isActive: isActive,
+                    isFirstBeat: isFirstBeat,
+                    isBottomBar: sliceIndex == slicesPerBeat - 1,
+                    cornerRadius: pillCornerRadius
+                )
+            }
+        }
+        .frame(width: containerWidth, height: containerHeight)
+    }
+}
+
+// MARK: - Horizontal Pill (One Bar Inside Container)
+
+struct HorizontalPill: View {
+    let isActive: Bool
+    let isFirstBeat: Bool
+    let isBottomBar: Bool
+    let cornerRadius: CGFloat
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .fill(pillColor)
+            .frame(height: pillHeight)
     }
     
-    enum BlockState {
-        case current    // Currently playing beat (green)
-        case inactive   // All other beats (purple)
-        
-        var color: Color {
-            switch self {
-            case .current:
-                return Color.green.opacity(0.8)
-            case .inactive:
-                return Color.purple.opacity(0.4)
+    // MARK: - Colors & Sizing
+    
+    private var pillColor: Color {
+        if isActive {
+            // Active beat: all bars fully purple
+            return Color.purple.opacity(0.95)
+        } else {
+            // Inactive beat: purple-tinted with low opacity
+            // Bottom bar slightly more opaque for grounded look
+            if isBottomBar {
+                return Color.purple.opacity(0.35)
+            } else {
+                return Color.purple.opacity(0.22)
             }
         }
-        
-        var borderColor: Color {
-            switch self {
-            case .current:
-                return Color.green.opacity(0.6)
-            case .inactive:
-                return Color.purple.opacity(0.3)
-            }
-        }
-        
-        var borderWidth: CGFloat {
-            switch self {
-            case .current:
-                return 2
-            case .inactive:
-                return 1
-            }
-        }
-        
-        var height: CGFloat {
-            // Same height for all blocks - no size change
-            return 36
-        }
-        
-        var shadowColor: Color {
-            switch self {
-            case .current:
-                return Color.green.opacity(0.4)
-            case .inactive:
-                return Color.clear
-            }
-        }
-        
-        var shadowRadius: CGFloat {
-            switch self {
-            case .current:
-                return 6
-            case .inactive:
-                return 0
-            }
-        }
+    }
+    
+    private var pillHeight: CGFloat {
+        return 10 // Increased from 8 for more solid appearance
     }
 }
 

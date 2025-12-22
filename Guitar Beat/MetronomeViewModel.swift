@@ -33,7 +33,7 @@ final class MetronomeViewModel: ObservableObject {
         }
     }
     
-    @Published var signature: RhythmicSignature = .sixteenFour {
+    @Published var signature: RhythmicSignature = .threeFour {
         didSet {
             engine.setSignature(signature)
             // Reset visualization when signature changes
