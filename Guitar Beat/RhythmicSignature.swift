@@ -43,26 +43,20 @@ struct RhythmicSignature: Equatable, Hashable {
     }
     
     /// Calculate the interval multiplier relative to a quarter note.
-    /// BPM is assumed to be in quarter notes per minute.
+    /// For a metronome app, BPM represents beats per minute regardless of note value.
+    /// The denominator is for display purposes only and doesn't affect timing.
     ///
-    /// Formula: multiplier = 4 / denominator
-    /// - Quarter note (4): multiplier = 1.0
-    /// - Eighth note (8): multiplier = 0.5 (twice as fast)
-    /// - Half note (2): multiplier = 2.0 (twice as slow)
-    /// - Sixteenth note (16): multiplier = 0.25 (four times as fast)
+    /// Always returns 1.0 so that BPM controls the actual beat rate.
     var intervalMultiplier: Double {
-        return 4.0 / Double(denominator)
+        return 1.0  // BPM always represents beats per minute, not note values
     }
     
     /// Calculate the actual interval in seconds for one beat at a given BPM.
-    /// - Parameter bpm: Beats per minute (quarter note = 1 beat)
+    /// - Parameter bpm: Beats per minute
     /// - Returns: Time in seconds between clicks
     func intervalSeconds(at bpm: Double) -> Double {
-        // Base interval for quarter note
-        let quarterNoteInterval = 60.0 / bpm
-        
-        // Apply denominator multiplier
-        return quarterNoteInterval * intervalMultiplier
+        // Simple calculation: 60 seconds / BPM = seconds per beat
+        return 60.0 / bpm
     }
     
     // MARK: - Common Signatures
