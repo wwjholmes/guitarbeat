@@ -57,6 +57,9 @@ final class MetronomeEngine {
     private var currentSignature = RhythmicSignature.fourFour
     private var currentBeatInPattern: Int = 0
     
+    // Beat callback for UI visualization
+    var onBeatTick: ((Int) -> Void)?
+    
     // Scheduling state
     private var scheduleQueue = DispatchQueue(label: "com.guitarbeat.metronome.schedule", qos: .userInteractive)
     private var schedulingTimer: DispatchSourceTimer?
@@ -479,6 +482,9 @@ final class MetronomeEngine {
             nextBeatSampleTime = playerTime.sampleTime + intervalSamples
             isFirstBeat = false
             
+            // Notify UI of beat
+            notifyBeatTick()
+            
             // Move to next beat in pattern
             currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
         } else {
@@ -490,11 +496,22 @@ final class MetronomeEngine {
             
             playerNode.scheduleBuffer(buffer, at: nextBeatTime, options: [])
             
+            // Notify UI of beat
+            notifyBeatTick()
+            
             // Increment for next beat
             nextBeatSampleTime += intervalSamples
             
             // Move to next beat in pattern (loops back to 0 after numerator beats)
             currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
+        }
+    }
+    
+    /// Notifies the UI about a beat tick on the main thread
+    private func notifyBeatTick() {
+        let beatIndex = currentBeatInPattern
+        DispatchQueue.main.async { [weak self] in
+            self?.onBeatTick?(beatIndex)
         }
     }
     

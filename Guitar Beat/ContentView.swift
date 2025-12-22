@@ -5,7 +5,7 @@
 //  Created by Wenjing Wang on 12/22/25.
 //
 
-import SwiftUI
+import SwiftUI 
 
 struct ContentView: View {
     @StateObject private var viewModel = MetronomeViewModel()
@@ -24,7 +24,7 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
             
-            VStack(spacing: 40) {
+            VStack(spacing: 20) {
                 // Title and Sound Selector
                 HStack {
                     // Sound picker button (left)
@@ -51,7 +51,7 @@ struct ContentView: View {
                         .frame(width: 44, height: 44)
                         .padding(.trailing, 20)
                 }
-                .padding(.top, 40)
+                .padding(.top, 30)
                 
                 // Sound type display
                 Text(viewModel.beatSound.rawValue)
@@ -82,18 +82,25 @@ struct ContentView: View {
                     )
                 }
                 
+                // Beat visualization (always visible)
+                BeatVisualizationView(
+                    currentBeat: viewModel.currentBeatIndex,
+                    totalBeats: viewModel.signature.numerator,
+                    isPlaying: viewModel.isPlaying
+                )
+                
                 Spacer()
                 
                 // BPM Display
-                VStack(spacing: 12) {
+                VStack(spacing: 8) {
                     Text("\(Int(localBPM))")
-                        .font(.system(size: 96, weight: .ultraLight, design: .rounded))
+                        .font(.system(size: 80, weight: .ultraLight, design: .rounded))
                         .foregroundColor(.white)
                         .monospacedDigit()
                         .contentTransition(.numericText())
                     
                     Text("BPM")
-                        .font(.title3)
+                        .font(.callout)
                         .fontWeight(.medium)
                         .foregroundColor(.white.opacity(0.6))
                         .tracking(2)
@@ -182,7 +189,7 @@ struct ContentView: View {
                     )
                     .foregroundColor(.white)
                 }
-                .padding(.bottom, 60)
+                .padding(.bottom, 40)
             }
         }
         .sheet(isPresented: $showSoundPicker) {
@@ -507,6 +514,168 @@ struct PresetButton: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.white.opacity(0.15))
                 )
+        }
+    }
+}
+
+// MARK: - Beat Visualization View
+
+struct BeatVisualizationView: View {
+    let currentBeat: Int
+    let totalBeats: Int
+    let isPlaying: Bool
+    
+    var body: some View {
+        GeometryReader { geometry in
+            let availableWidth = geometry.size.width - 80 // Account for horizontal padding
+            let blockSpacing: CGFloat = 8
+            let totalSpacing = blockSpacing * CGFloat(totalBeats - 1)
+            
+            // Calculate ideal block width, but constrain to max 4x the minimum
+            let minBlockWidth: CGFloat = 30  // Minimum block width
+            let maxBlockWidth: CGFloat = minBlockWidth * 4  // Max is 4x minimum
+            let idealBlockWidth = (availableWidth - totalSpacing) / CGFloat(totalBeats)
+            let blockWidth = min(idealBlockWidth, maxBlockWidth)
+            
+            // Calculate actual content width (might be less than available)
+            let contentWidth = (blockWidth * CGFloat(totalBeats)) + totalSpacing
+            
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: blockSpacing) {
+                        // Render exactly totalBeats blocks (one per beat in the cycle)
+                        ForEach(0..<totalBeats, id: \.self) { beatIndex in
+                            BeatBlock(
+                                beatIndex: beatIndex,
+                                currentBeat: currentBeat,
+                                totalBeats: totalBeats,
+                                isPlaying: isPlaying,
+                                blockWidth: blockWidth
+                            )
+                            .id(beatIndex)
+                        }
+                    }
+                    .frame(width: contentWidth)
+                    .frame(maxWidth: .infinity) // Center the content
+                    .padding(.horizontal, 40)
+                }
+                .onChange(of: currentBeat) { oldValue, newValue in
+                    // Smooth scroll to keep current beat centered
+                    if isPlaying {
+                        withAnimation(.easeOut(duration: 0.1)) {
+                            proxy.scrollTo(newValue, anchor: .center)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(height: 50)
+    }
+}
+
+// MARK: - Beat Block
+
+struct BeatBlock: View {
+    let beatIndex: Int      // Which beat this block represents (0 to totalBeats-1)
+    let currentBeat: Int    // The currently playing beat
+    let totalBeats: Int     // Total beats in the cycle
+    let isPlaying: Bool     // Whether metronome is playing
+    let blockWidth: CGFloat // Dynamic width based on screen size
+    
+    // Determine the state of this block
+    private var blockState: BlockState {
+        // When not playing, show all blocks as inactive (purple)
+        if !isPlaying {
+            return .inactive
+        }
+        
+        // When playing, show current as highlighted (green), others as inactive
+        if beatIndex == currentBeat {
+            return .current
+        } else {
+            return .inactive
+        }
+    }
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .fill(blockState.color)
+            .frame(width: blockWidth, height: blockState.height)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(blockState.borderColor, lineWidth: blockState.borderWidth)
+            )
+            .shadow(color: blockState.shadowColor, radius: blockState.shadowRadius)
+            .scaleEffect(blockState.scale)
+            .animation(.easeInOut(duration: 0.15), value: currentBeat)
+            .animation(.easeInOut(duration: 0.15), value: isPlaying)
+    }
+    
+    enum BlockState {
+        case current    // Currently playing beat (green)
+        case inactive   // All other beats (purple)
+        
+        var color: Color {
+            switch self {
+            case .current:
+                return Color.green.opacity(0.8)
+            case .inactive:
+                return Color.purple.opacity(0.4)
+            }
+        }
+        
+        var borderColor: Color {
+            switch self {
+            case .current:
+                return Color.green.opacity(0.6)
+            case .inactive:
+                return Color.purple.opacity(0.3)
+            }
+        }
+        
+        var borderWidth: CGFloat {
+            switch self {
+            case .current:
+                return 2
+            case .inactive:
+                return 1
+            }
+        }
+        
+        var height: CGFloat {
+            switch self {
+            case .current:
+                return 36
+            case .inactive:
+                return 32
+            }
+        }
+        
+        var scale: CGFloat {
+            switch self {
+            case .current:
+                return 1.05
+            case .inactive:
+                return 1.0
+            }
+        }
+        
+        var shadowColor: Color {
+            switch self {
+            case .current:
+                return Color.green.opacity(0.4)
+            case .inactive:
+                return Color.clear
+            }
+        }
+        
+        var shadowRadius: CGFloat {
+            switch self {
+            case .current:
+                return 6
+            case .inactive:
+                return 0
+            }
         }
     }
 }

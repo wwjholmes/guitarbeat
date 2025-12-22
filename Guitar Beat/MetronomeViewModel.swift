@@ -36,10 +36,15 @@ final class MetronomeViewModel: ObservableObject {
     @Published var signature: RhythmicSignature = .fourFour {
         didSet {
             engine.setSignature(signature)
+            // Reset visualization when signature changes
+            currentBeatIndex = 0
         }
     }
     
     @Published var isPlaying: Bool = false
+    
+    // Visualization state
+    @Published var currentBeatIndex: Int = 0
     
     // MARK: - Constants
     
@@ -60,6 +65,13 @@ final class MetronomeViewModel: ObservableObject {
         engine.setBPM(bpm)
         engine.setVolume(volume)
         
+        // Set up beat tick callback for visualization
+        engine.onBeatTick = { [weak self] beatIndex in
+            Task { @MainActor in
+                self?.currentBeatIndex = beatIndex
+            }
+        }
+        
         // Observe app lifecycle
         setupLifecycleObservers()
     }
@@ -75,6 +87,7 @@ final class MetronomeViewModel: ObservableObject {
     }
     
     func start() {
+        currentBeatIndex = 0  // Reset visualization
         engine.start()
         isPlaying = true
     }
@@ -82,6 +95,7 @@ final class MetronomeViewModel: ObservableObject {
     func stop() {
         engine.stop()
         isPlaying = false
+        currentBeatIndex = 0  // Reset visualization
     }
     
     func incrementBPM() {
