@@ -15,7 +15,7 @@ final class MetronomeViewModel: ObservableObject {
     
     // MARK: - Published Properties
     
-    @Published var bpm: Double = 100.0 {
+    @Published var bpm: Double = 60.0 {
         didSet {
             engine.setBPM(bpm)
         }
@@ -33,7 +33,7 @@ final class MetronomeViewModel: ObservableObject {
         }
     }
     
-    @Published var signature: RhythmicSignature = .fourFour {
+    @Published var signature: RhythmicSignature = .sixteenFour {
         didSet {
             engine.setSignature(signature)
             // Reset visualization when signature changes
@@ -64,10 +64,12 @@ final class MetronomeViewModel: ObservableObject {
         // Initialize engine with default values
         engine.setBPM(bpm)
         engine.setVolume(volume)
+        engine.setSignature(signature)  // Set the signature!
         
         // Set up beat tick callback for visualization
         engine.onBeatTick = { [weak self] beatIndex in
             Task { @MainActor in
+                print("🎵 Beat tick received: \(beatIndex) at \(Date())")
                 self?.currentBeatIndex = beatIndex
             }
         }

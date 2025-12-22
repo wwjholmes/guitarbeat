@@ -72,6 +72,7 @@ struct RhythmicSignature: Equatable, Hashable {
     static let sixEight = RhythmicSignature(numerator: 6, denominator: 8)
     static let twoFour = RhythmicSignature(numerator: 2, denominator: 4)
     static let fiveFour = RhythmicSignature(numerator: 5, denominator: 4)
+    static let sixteenFour = RhythmicSignature(numerator: 16, denominator: 4)
     
     // MARK: - Picker Values
     

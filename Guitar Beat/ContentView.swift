@@ -11,7 +11,7 @@ struct ContentView: View {
     @StateObject private var viewModel = MetronomeViewModel()
     @State private var showSoundPicker = false
     @State private var showSignaturePicker = false
-    @State private var localBPM: Double = 100.0
+    @State private var localBPM: Double = 60.0
     @State private var bpmUpdateTask: Task<Void, Never>?
     
     var body: some View {
@@ -527,46 +527,35 @@ struct BeatVisualizationView: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let availableWidth = geometry.size.width - 80 // Account for horizontal padding
-            let blockSpacing: CGFloat = 8
+            let availableWidth = geometry.size.width - 40 // Account for horizontal padding
+            let blockSpacing: CGFloat = totalBeats > 8 ? 4 : 8 // Smaller spacing for many beats
             let totalSpacing = blockSpacing * CGFloat(totalBeats - 1)
             
-            // Calculate ideal block width, but constrain to max 4x the minimum
-            let minBlockWidth: CGFloat = 30  // Minimum block width
-            let maxBlockWidth: CGFloat = minBlockWidth * 4  // Max is 4x minimum
+            // Calculate ideal block width with flexible constraints
+            let minBlockWidth: CGFloat = 20  // Smaller minimum for many beats
+            let maxBlockWidth: CGFloat = 120  // Maximum for very few beats
             let idealBlockWidth = (availableWidth - totalSpacing) / CGFloat(totalBeats)
-            let blockWidth = min(idealBlockWidth, maxBlockWidth)
+            let blockWidth = min(max(idealBlockWidth, minBlockWidth), maxBlockWidth)
             
             // Calculate actual content width (might be less than available)
             let contentWidth = (blockWidth * CGFloat(totalBeats)) + totalSpacing
             
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: blockSpacing) {
-                        // Render exactly totalBeats blocks (one per beat in the cycle)
-                        ForEach(0..<totalBeats, id: \.self) { beatIndex in
-                            BeatBlock(
-                                beatIndex: beatIndex,
-                                currentBeat: currentBeat,
-                                totalBeats: totalBeats,
-                                isPlaying: isPlaying,
-                                blockWidth: blockWidth
-                            )
-                            .id(beatIndex)
-                        }
-                    }
-                    .frame(width: contentWidth)
-                    .frame(maxWidth: .infinity) // Center the content
-                    .padding(.horizontal, 40)
-                }
-                .onChange(of: currentBeat) { oldValue, newValue in
-                    // Smooth scroll to keep current beat centered
-                    if isPlaying {
-                        withAnimation(.easeOut(duration: 0.1)) {
-                            proxy.scrollTo(newValue, anchor: .center)
-                        }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: blockSpacing) {
+                    // Render exactly totalBeats blocks (one per beat in the cycle)
+                    ForEach(0..<totalBeats, id: \.self) { beatIndex in
+                        BeatBlock(
+                            beatIndex: beatIndex,
+                            currentBeat: currentBeat,
+                            totalBeats: totalBeats,
+                            isPlaying: isPlaying,
+                            blockWidth: blockWidth
+                        )
+                        .id(beatIndex)
                     }
                 }
+                .padding(.horizontal, 20)
+                .frame(minWidth: geometry.size.width)
             }
         }
         .frame(height: 50)
@@ -606,9 +595,6 @@ struct BeatBlock: View {
                     .strokeBorder(blockState.borderColor, lineWidth: blockState.borderWidth)
             )
             .shadow(color: blockState.shadowColor, radius: blockState.shadowRadius)
-            .scaleEffect(blockState.scale)
-            .animation(.easeInOut(duration: 0.15), value: currentBeat)
-            .animation(.easeInOut(duration: 0.15), value: isPlaying)
     }
     
     enum BlockState {
@@ -643,21 +629,8 @@ struct BeatBlock: View {
         }
         
         var height: CGFloat {
-            switch self {
-            case .current:
-                return 36
-            case .inactive:
-                return 32
-            }
-        }
-        
-        var scale: CGFloat {
-            switch self {
-            case .current:
-                return 1.05
-            case .inactive:
-                return 1.0
-            }
+            // Same height for all blocks - no size change
+            return 36
         }
         
         var shadowColor: Color {
