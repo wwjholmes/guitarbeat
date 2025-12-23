@@ -10,6 +10,7 @@ import Foundation
 
 /// Available beat sound types
 enum BeatSound: String, CaseIterable, Identifiable {
+    case selectButton = "Select Button"
     case kickDrum = "Kick Drum"
     case rimClick = "Rim Click"
     case woodBlock = "Wood Block"
@@ -21,6 +22,8 @@ enum BeatSound: String, CaseIterable, Identifiable {
     
     var description: String {
         switch self {
+        case .selectButton:
+            return "Clean, modern UI button sound"
         case .kickDrum:
             return "Deep, punchy low-frequency drum"
         case .rimClick:
@@ -53,7 +56,7 @@ final class MetronomeEngine {
     private var isRunning = false
     private var currentBPM: Double = 100.0
     private var currentVolume: Float = 0.8
-    private var currentSound: BeatSound = .kickDrum
+    private var currentSound: BeatSound = .selectButton  // Default to select button sound
     private var currentSignature = RhythmicSignature.fourFour
     private var currentBeatInPattern: Int = 0
     private var scheduledBeatsCount: Int = 0  // Track how many beats we've scheduled ahead
@@ -67,6 +70,10 @@ final class MetronomeEngine {
     private var schedulingTimer: DispatchSourceTimer?
     private var nextBeatSampleTime: AVAudioFramePosition = 0
     private var isFirstBeat = true
+    
+    // Track pending UI notifications for cancellation
+    private var pendingUINotifications: [DispatchWorkItem] = []
+    private let notificationLock = NSLock()
     
     // MARK: - Initialization
     
@@ -87,8 +94,8 @@ final class MetronomeEngine {
         // Attach player node to engine
         audioEngine.attach(playerNode)
         
-        // Get the audio format
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        // Use stereo format to support both mono and stereo audio files
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         
         // Connect player node to main mixer
         audioEngine.connect(playerNode, to: audioEngine.mainMixerNode, format: format)
@@ -104,12 +111,21 @@ final class MetronomeEngine {
     }
     
     /// Generates a drum-like beat sound programmatically based on the selected sound type.
+    /// For audio files, loads from bundle instead of generating.
     private func generateClickSound(for sound: BeatSound) {
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        // For select button, load from audio file
+        if sound == .selectButton {
+            loadAudioFile(named: "select-button-sfx", extension: "wav")
+            return
+        }
+        
+        // For other sounds, generate programmatically in stereo
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         
         // Duration varies by sound type
         let clickDuration: Double
         switch sound {
+        case .selectButton: return  // Already handled above
         case .kickDrum: clickDuration = 0.08
         case .rimClick: clickDuration = 0.03
         case .woodBlock: clickDuration = 0.025
@@ -127,28 +143,148 @@ final class MetronomeEngine {
         
         buffer.frameLength = frameCount
         
-        guard let channelData = buffer.floatChannelData?[0] else {
+        guard let leftChannel = buffer.floatChannelData?[0],
+              let rightChannel = buffer.floatChannelData?[1] else {
             print("Failed to get channel data")
             return
         }
         
-        // Generate sound based on type
+        // Generate sound based on type (same for both channels - mono content in stereo format)
         switch sound {
+        case .selectButton: break  // Already handled
         case .kickDrum:
-            generateKickDrum(channelData: channelData, frameCount: frameCount)
+            generateKickDrum(channelData: leftChannel, frameCount: frameCount)
+            generateKickDrum(channelData: rightChannel, frameCount: frameCount)
         case .rimClick:
-            generateRimClick(channelData: channelData, frameCount: frameCount)
+            generateRimClick(channelData: leftChannel, frameCount: frameCount)
+            generateRimClick(channelData: rightChannel, frameCount: frameCount)
         case .woodBlock:
-            generateWoodBlock(channelData: channelData, frameCount: frameCount)
+            generateWoodBlock(channelData: leftChannel, frameCount: frameCount)
+            generateWoodBlock(channelData: rightChannel, frameCount: frameCount)
         case .cowbell:
-            generateCowbell(channelData: channelData, frameCount: frameCount)
+            generateCowbell(channelData: leftChannel, frameCount: frameCount)
+            generateCowbell(channelData: rightChannel, frameCount: frameCount)
         case .snare:
-            generateSnare(channelData: channelData, frameCount: frameCount)
+            generateSnare(channelData: leftChannel, frameCount: frameCount)
+            generateSnare(channelData: rightChannel, frameCount: frameCount)
         case .classicClick:
-            generateClassicClick(channelData: channelData, frameCount: frameCount)
+            generateClassicClick(channelData: leftChannel, frameCount: frameCount)
+            generateClassicClick(channelData: rightChannel, frameCount: frameCount)
         }
         
         self.clickBuffer = buffer
+    }
+    
+    /// Loads an audio file from the bundle and converts it to a PCM buffer
+    private func loadAudioFile(named filename: String, extension fileExtension: String) {
+        guard let url = Bundle.main.url(forResource: filename, withExtension: fileExtension) else {
+            print("❌ Failed to find audio file: \(filename).\(fileExtension)")
+            // Fallback to generated classic click sound
+            generateFallbackClickSound()
+            return
+        }
+        
+        do {
+            let audioFile = try AVAudioFile(forReading: url)
+            let fileFormat = audioFile.processingFormat
+            
+            print("📁 Audio file format: \(fileFormat.channelCount) channels, \(fileFormat.sampleRate) Hz")
+            
+            guard let buffer = AVAudioPCMBuffer(
+                pcmFormat: fileFormat,
+                frameCapacity: AVAudioFrameCount(audioFile.length)
+            ) else {
+                print("❌ Failed to create buffer for audio file")
+                generateFallbackClickSound()
+                return
+            }
+            
+            try audioFile.read(into: buffer)
+            
+            // Convert to engine's format (stereo, 44.1kHz)
+            let targetFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+            
+            if fileFormat.channelCount != targetFormat.channelCount || 
+               fileFormat.sampleRate != targetFormat.sampleRate {
+                guard let convertedBuffer = convertBuffer(buffer, to: targetFormat) else {
+                    print("❌ Failed to convert buffer to target format")
+                    generateFallbackClickSound()
+                    return
+                }
+                self.clickBuffer = convertedBuffer
+                print("✅ Converted audio: \(fileFormat.channelCount)ch@\(fileFormat.sampleRate)Hz -> \(targetFormat.channelCount)ch@\(targetFormat.sampleRate)Hz")
+            } else {
+                self.clickBuffer = buffer
+            }
+            
+            print("✅ Loaded audio file: \(filename).\(fileExtension)")
+            
+        } catch {
+            print("❌ Error loading audio file: \(error)")
+            generateFallbackClickSound()
+        }
+    }
+    
+    /// Generates a fallback click sound when audio file loading fails
+    private func generateFallbackClickSound() {
+        print("⚠️ Using fallback classic click sound")
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+        let clickDuration: Double = 0.015
+        let frameCount = AVAudioFrameCount(sampleRate * clickDuration)
+        
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount),
+              let leftChannel = buffer.floatChannelData?[0],
+              let rightChannel = buffer.floatChannelData?[1] else {
+            print("❌ Failed to create fallback buffer")
+            return
+        }
+        
+        buffer.frameLength = frameCount
+        generateClassicClick(channelData: leftChannel, frameCount: frameCount)
+        generateClassicClick(channelData: rightChannel, frameCount: frameCount)
+        self.clickBuffer = buffer
+    }
+    
+    /// Converts an audio buffer to a different format (sample rate and/or channels)
+    private func convertBuffer(_ buffer: AVAudioPCMBuffer, to targetFormat: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let inputFormat = buffer.format
+        
+        guard let converter = AVAudioConverter(from: inputFormat, to: targetFormat) else {
+            print("❌ Failed to create audio converter")
+            return nil
+        }
+        
+        // Calculate output buffer capacity
+        let ratio = targetFormat.sampleRate / inputFormat.sampleRate
+        let outputFrameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
+        
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: targetFormat,
+            frameCapacity: outputFrameCapacity
+        ) else {
+            print("❌ Failed to create output buffer")
+            return nil
+        }
+        
+        var error: NSError?
+        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        let status = converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+        
+        if let error = error {
+            print("❌ Conversion error: \(error)")
+            return nil
+        }
+        
+        if status == .error {
+            print("❌ Converter returned error status")
+            return nil
+        }
+        
+        return outputBuffer
     }
     
     // MARK: - Sound Generators
@@ -276,11 +412,19 @@ final class MetronomeEngine {
     /// Generates an accented version of the click sound for the first beat.
     /// The accent is created by increasing volume and adding a higher frequency component.
     private func generateAccentSound(for sound: BeatSound) {
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        // For select button, use the same sound with volume boost (applied via player)
+        if sound == .selectButton {
+            // Use the same click buffer, accent will be handled by volume
+            self.accentBuffer = self.clickBuffer
+            return
+        }
+        
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         
         // Use same duration as regular click
         let clickDuration: Double
         switch sound {
+        case .selectButton: return  // Already handled above
         case .kickDrum: clickDuration = 0.08
         case .rimClick: clickDuration = 0.03
         case .woodBlock: clickDuration = 0.025
@@ -298,40 +442,51 @@ final class MetronomeEngine {
         
         buffer.frameLength = frameCount
         
-        guard let channelData = buffer.floatChannelData?[0] else {
+        guard let leftChannel = buffer.floatChannelData?[0],
+              let rightChannel = buffer.floatChannelData?[1] else {
             print("Failed to get accent channel data")
             return
         }
         
-        // Generate the base sound
+        // Generate the base sound for both channels
         switch sound {
+        case .selectButton: break  // Already handled
         case .kickDrum:
-            generateKickDrum(channelData: channelData, frameCount: frameCount)
+            generateKickDrum(channelData: leftChannel, frameCount: frameCount)
+            generateKickDrum(channelData: rightChannel, frameCount: frameCount)
         case .rimClick:
-            generateRimClick(channelData: channelData, frameCount: frameCount)
+            generateRimClick(channelData: leftChannel, frameCount: frameCount)
+            generateRimClick(channelData: rightChannel, frameCount: frameCount)
         case .woodBlock:
-            generateWoodBlock(channelData: channelData, frameCount: frameCount)
+            generateWoodBlock(channelData: leftChannel, frameCount: frameCount)
+            generateWoodBlock(channelData: rightChannel, frameCount: frameCount)
         case .cowbell:
-            generateCowbell(channelData: channelData, frameCount: frameCount)
+            generateCowbell(channelData: leftChannel, frameCount: frameCount)
+            generateCowbell(channelData: rightChannel, frameCount: frameCount)
         case .snare:
-            generateSnare(channelData: channelData, frameCount: frameCount)
+            generateSnare(channelData: leftChannel, frameCount: frameCount)
+            generateSnare(channelData: rightChannel, frameCount: frameCount)
         case .classicClick:
-            generateClassicClick(channelData: channelData, frameCount: frameCount)
+            generateClassicClick(channelData: leftChannel, frameCount: frameCount)
+            generateClassicClick(channelData: rightChannel, frameCount: frameCount)
         }
         
-        // Apply accent: increase volume by 30% and add subtle high-frequency ping
+        // Apply accent to both channels: increase volume by 30% and add subtle high-frequency ping
         for frame in 0..<Int(frameCount) {
             let time = Float(frame) / Float(sampleRate)
             let normalizedTime = Float(frame) / Float(frameCount)
-            
-            // Original sample with volume boost
-            let boostedSample = channelData[frame] * 1.3
             
             // Add a brief high-frequency "ping" for accent clarity
             let pingEnvelope = exp(-normalizedTime * 60.0)
             let ping = sin(2.0 * .pi * 2400.0 * time) * pingEnvelope * 0.15
             
-            channelData[frame] = min(max(boostedSample + ping, -1.0), 1.0) // Clamp to prevent distortion
+            // Apply to left channel
+            let boostedLeft = leftChannel[frame] * 1.3
+            leftChannel[frame] = min(max(boostedLeft + ping, -1.0), 1.0)
+            
+            // Apply to right channel
+            let boostedRight = rightChannel[frame] * 1.3
+            rightChannel[frame] = min(max(boostedRight + ping, -1.0), 1.0)
         }
         
         self.accentBuffer = buffer
@@ -374,6 +529,9 @@ final class MetronomeEngine {
         schedulingTimer?.cancel()
         schedulingTimer = nil
         
+        // Cancel all pending UI notifications
+        cancelPendingUINotifications()
+        
         // Stop playback
         playerNode.stop()
     }
@@ -405,6 +563,7 @@ final class MetronomeEngine {
     }
     
     func setSignature(_ signature: RhythmicSignature) {
+        let oldSignature = currentSignature
         currentSignature = signature
         
         // Reset beat pattern counter
@@ -412,10 +571,23 @@ final class MetronomeEngine {
         
         // If running, restart to apply new signature immediately
         if isRunning {
-            let wasRunning = isRunning
+            // Stop current playback
             stop()
-            if wasRunning {
-                start()
+            
+            // Calculate delay: wait one beat interval of the OLD signature before starting new one
+            // This prevents two consecutive beats from firing
+            let delaySeconds = oldSignature.intervalSeconds(at: currentBPM)
+            
+            print("⏸️ Signature changed from \(oldSignature.displayString) to \(signature.displayString)")
+            print("⏳ Waiting \(String(format: "%.3f", delaySeconds))s before starting new rhythm")
+            
+            // Schedule restart after one beat interval
+            DispatchQueue.main.asyncAfter(deadline: .now() + delaySeconds) { [weak self] in
+                guard let self = self else { return }
+                // Only restart if we're not running (user didn't stop manually)
+                if !self.isRunning {
+                    self.start()
+                }
             }
         }
     }
@@ -453,6 +625,22 @@ final class MetronomeEngine {
     }
     
     // MARK: - Scheduling Logic
+    
+    /// Cancels all pending UI notification work items
+    private func cancelPendingUINotifications() {
+        notificationLock.lock()
+        defer { notificationLock.unlock() }
+        
+        print("🚫 Cancelling \(pendingUINotifications.count) pending UI notifications")
+        
+        // Cancel all pending work items
+        for workItem in pendingUINotifications {
+            workItem.cancel()
+        }
+        
+        // Clear the array
+        pendingUINotifications.removeAll()
+    }
     
     /// Schedules the next click buffer at the appropriate audio time.
     /// This approach uses the audio engine's time system for drift-free precision.
@@ -543,10 +731,32 @@ final class MetronomeEngine {
                 
                 print("⏱️ Beat \(beatThatWillPlay): nextBeatSampleTime=\(nextBeatSampleTime), currentPlayerTime=\(currentPlayerTime.sampleTime), delayInSeconds=\(String(format: "%.3f", delayInSeconds))s, scheduled=\(scheduledBeatsCount)")
                 
-                // Schedule UI notification when beat plays
-                DispatchQueue.main.asyncAfter(deadline: .now() + delayInSeconds) { [weak self] in
-                    self?.onBeatTick?(beatThatWillPlay)
+                // Create a unique ID for this work item
+                let workItemID = UUID()
+                
+                // Schedule UI notification when beat plays using DispatchWorkItem for cancellation
+                let workItem = DispatchWorkItem { [weak self] in
+                    guard let self = self else { return }
+                    
+                    // Notify the UI
+                    self.onBeatTick?(beatThatWillPlay)
+                    
+                    // Clean up: remove completed work items from the array
+                    self.notificationLock.lock()
+                    // Only remove the first item since we process in order (FIFO)
+                    if !self.pendingUINotifications.isEmpty {
+                        self.pendingUINotifications.removeFirst()
+                    }
+                    self.notificationLock.unlock()
                 }
+                
+                // Store work item so it can be cancelled if needed
+                notificationLock.lock()
+                pendingUINotifications.append(workItem)
+                notificationLock.unlock()
+                
+                // Schedule the work item
+                DispatchQueue.main.asyncAfter(deadline: .now() + delayInSeconds, execute: workItem)
                 
                 // Schedule next click at the calculated time in player's timeline
                 let nextBeatTime = AVAudioTime(

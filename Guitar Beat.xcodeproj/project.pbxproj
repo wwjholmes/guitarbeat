@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		3DCB4F482EFA2389000FA3CF /* select-button-sfx.wav in Resources */ = {isa = PBXBuildFile; fileRef = 3DCB4F472EFA2389000FA3CF /* select-button-sfx.wav */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		3DCB4F252EF9A96D000FA3CF /* Guitar Beat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Guitar Beat.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DCB4F472EFA2389000FA3CF /* select-button-sfx.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "select-button-sfx.wav"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +37,7 @@
 		3DCB4F1C2EF9A96D000FA3CF = {
 			isa = PBXGroup;
 			children = (
+				3DCB4F4A2EFA25CF000FA3CF /* Sounds */,
 				3DCB4F272EF9A96D000FA3CF /* Guitar Beat */,
 				3DCB4F262EF9A96D000FA3CF /* Products */,
 			);
@@ -43,6 +49,14 @@
 				3DCB4F252EF9A96D000FA3CF /* Guitar Beat.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		3DCB4F4A2EFA25CF000FA3CF /* Sounds */ = {
+			isa = PBXGroup;
+			children = (
+				3DCB4F472EFA2389000FA3CF /* select-button-sfx.wav */,
+			);
+			path = Sounds;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -109,6 +123,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3DCB4F482EFA2389000FA3CF /* select-button-sfx.wav in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
