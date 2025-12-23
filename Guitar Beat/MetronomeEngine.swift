@@ -75,6 +75,9 @@ final class MetronomeEngine {
     private var pendingUINotifications: [DispatchWorkItem] = []
     private let notificationLock = NSLock()
     
+    // Track timing for signature changes
+    private var lastBeatTime: Date = Date()
+    
     // MARK: - Initialization
     
     init() {
@@ -494,15 +497,22 @@ final class MetronomeEngine {
     
     // MARK: - Public Controls
     
-    func start() {
+    func start(resetBeatPosition: Bool = true) {
         guard !isRunning else { return }
         isRunning = true
         isFirstBeat = true
-        currentBeatInPattern = 0
+        
+        // Only reset beat position if explicitly requested (default for user start/stop)
+        // Don't reset when restarting after signature change (smart remapping already handled it)
+        if resetBeatPosition {
+            currentBeatInPattern = 0
+        }
+        
         nextBeatSampleTime = 0  // Reset timing
         scheduledBeatsCount = 0  // Reset scheduled count
+        lastBeatTime = Date()  // Initialize beat timing
         
-        print("🚀 Starting metronome: BPM=\(currentBPM), Signature=\(currentSignature.numerator)/\(currentSignature.denominator)")
+        print("🚀 Starting metronome: BPM=\(currentBPM), Signature=\(currentSignature.numerator)/\(currentSignature.denominator), Beat position: \(currentBeatInPattern)")
         print("🔊 Volume: \(currentVolume), PlayerNode volume: \(playerNode.volume)")
         print("🎵 Click buffer: \(clickBuffer != nil ? "✅" : "❌"), Accent buffer: \(accentBuffer != nil ? "✅" : "❌")")
         
@@ -571,27 +581,50 @@ final class MetronomeEngine {
         let oldSignature = currentSignature
         currentSignature = signature
         
-        // Reset beat pattern counter
-        currentBeatInPattern = 0
+        // Smart beat position remapping:
+        // 1. If new signature has more beats, keep current position
+        // 2. If new signature has fewer beats and current position is out of bounds, use modulo
+        let oldPosition = currentBeatInPattern
+        
+        if signature.numerator >= oldSignature.numerator {
+            // New signature has same or more beats - keep position as-is
+            // (currentBeatInPattern stays the same)
+            print("✨ Keeping beat position \(currentBeatInPattern) (new signature has \(signature.numerator) beats)")
+        } else if currentBeatInPattern >= signature.numerator {
+            // New signature has fewer beats and current position is out of bounds
+            // Remap using modulo to land on a valid position
+            currentBeatInPattern = currentBeatInPattern % signature.numerator
+            print("✨ Remapped beat position from \(oldPosition) to \(currentBeatInPattern) (new signature has \(signature.numerator) beats)")
+        } else {
+            // New signature has fewer beats but current position is still valid
+            print("✨ Keeping beat position \(currentBeatInPattern) (still valid in new signature with \(signature.numerator) beats)")
+        }
         
         // If running, restart to apply new signature immediately
         if isRunning {
             // Stop current playback
             stop()
             
-            // Calculate delay: wait one beat interval of the OLD signature before starting new one
-            // This prevents two consecutive beats from firing
-            let delaySeconds = oldSignature.intervalSeconds(at: currentBPM)
+            // Smart delay calculation: only wait for the remaining time until next beat
+            let beatInterval = oldSignature.intervalSeconds(at: currentBPM)
+            let timeSinceLastBeat = Date().timeIntervalSince(lastBeatTime)
+            let timeUntilNextBeat = beatInterval - timeSinceLastBeat
+            
+            // If we're past 75% of the beat interval, restart immediately to avoid long pause
+            // Otherwise wait for the natural next beat time
+            let delaySeconds = max(0.05, min(timeUntilNextBeat, beatInterval * 0.75))
             
             print("⏸️ Signature changed from \(oldSignature.displayString) to \(signature.displayString)")
+            print("⏱️ Time since last beat: \(String(format: "%.3f", timeSinceLastBeat))s")
             print("⏳ Waiting \(String(format: "%.3f", delaySeconds))s before starting new rhythm")
             
-            // Schedule restart after one beat interval
+            // Schedule restart after calculated delay
+            // IMPORTANT: Pass resetBeatPosition: false to preserve our smart remapping
             DispatchQueue.main.asyncAfter(deadline: .now() + delaySeconds) { [weak self] in
                 guard let self = self else { return }
                 // Only restart if we're not running (user didn't stop manually)
                 if !self.isRunning {
-                    self.start()
+                    self.start(resetBeatPosition: false)
                 }
             }
         }
@@ -670,15 +703,16 @@ final class MetronomeEngine {
             
             // Get the current audio time
             if isFirstBeat {
-                // Schedule first beat immediately
-                print("🎵 Scheduling first beat immediately (beat 0)")
+                // Schedule first beat immediately (uses currentBeatInPattern, not necessarily beat 0)
+                let beatThatWillPlay = currentBeatInPattern
+                print("🎵 Scheduling first beat immediately (beat \(beatThatWillPlay))")
                 
                 // Use a weak self to avoid retain cycle
                 playerNode.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
-                    print("✅ Beat 0 completion handler called")
+                    print("✅ Beat \(beatThatWillPlay) completion handler called")
                     self?.scheduleQueue.async {
                         self?.scheduledBeatsCount -= 1
-                        print("📉 Scheduled count after beat 0: \(self?.scheduledBeatsCount ?? -1)")
+                        print("📉 Scheduled count after beat \(beatThatWillPlay): \(self?.scheduledBeatsCount ?? -1)")
                     }
                 }
                 
@@ -702,7 +736,10 @@ final class MetronomeEngine {
                 isFirstBeat = false
                 scheduledBeatsCount += 1
                 
-                // Notify UI immediately for first beat (index 0)
+                // Track when this beat fires for signature change timing
+                lastBeatTime = Date()
+                
+                // Notify UI immediately with the ACTUAL current beat (not always 0)
                 notifyBeatTick()
                 
                 // Increment for NEXT scheduling call
@@ -742,6 +779,9 @@ final class MetronomeEngine {
                 // Schedule UI notification when beat plays using DispatchWorkItem for cancellation
                 let workItem = DispatchWorkItem { [weak self] in
                     guard let self = self else { return }
+                    
+                    // Track when this beat fires for signature change timing
+                    self.lastBeatTime = Date()
                     
                     // Notify the UI
                     self.onBeatTick?(beatThatWillPlay)

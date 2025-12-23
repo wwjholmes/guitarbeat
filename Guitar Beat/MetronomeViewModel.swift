@@ -36,8 +36,8 @@ final class MetronomeViewModel: ObservableObject {
     @Published var signature: RhythmicSignature = .threeFour {
         didSet {
             engine.setSignature(signature)
-            // Reset visualization when signature changes
-            currentBeatIndex = 0
+            // Don't reset currentBeatIndex here - let the engine's smart remapping handle it
+            // The engine will send the correct beat index via onBeatTick callback
         }
     }
     
