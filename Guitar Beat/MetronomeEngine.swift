@@ -11,10 +11,10 @@ import Foundation
 /// Available beat sound types
 enum BeatSound: String, CaseIterable, Identifiable {
     case selectButton = "Select Button"
+    case cowbell = "Cowbell"
     case kickDrum = "Kick Drum"
     case rimClick = "Rim Click"
     case woodBlock = "Wood Block"
-    case cowbell = "Cowbell"
     case snare = "Snare"
     case classicClick = "Classic Click"
     
@@ -60,7 +60,7 @@ final class MetronomeEngine {
     private var currentSignature = RhythmicSignature.fourFour
     private var currentBeatInPattern: Int = 0
     private var scheduledBeatsCount: Int = 0  // Track how many beats we've scheduled ahead
-    private let maxScheduledBeats = 3  // Keep 3 beats scheduled ahead
+    private let maxScheduledBeats = 1  // Keep only 1 beat scheduled ahead for faster sound switching
     
     // Beat callback for UI visualization
     var onBeatTick: ((Int) -> Void)?
@@ -556,10 +556,15 @@ final class MetronomeEngine {
     
     func setBeatSound(_ sound: BeatSound) {
         currentSound = sound
+        
+        // Generate new sound buffers
         generateClickSound(for: sound)
         generateAccentSound(for: sound)
         
-        // If running, the new sound will be used on the next scheduled beat
+        // That's it! No restart needed.
+        // The scheduling loop will pick up the new buffers on the next iteration
+        // because it reads clickBuffer/accentBuffer dynamically each time
+        print("🔊 Sound changed to \(sound.rawValue) - new sound will be used for next scheduled beats")
     }
     
     func setSignature(_ signature: RhythmicSignature) {
