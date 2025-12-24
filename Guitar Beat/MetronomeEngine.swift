@@ -191,25 +191,51 @@ final class MetronomeEngine {
             let audioFile = try AVAudioFile(forReading: url)
             let fileFormat = audioFile.processingFormat
             
-            print("📁 Audio file format: \(fileFormat.channelCount) channels, \(fileFormat.sampleRate) Hz")
+            // Calculate audio file duration
+            let fileDuration = Double(audioFile.length) / fileFormat.sampleRate
+            print("📁 Audio file: \(fileFormat.channelCount)ch, \(fileFormat.sampleRate)Hz, duration: \(String(format: "%.3f", fileDuration))s")
+            
+            // Limit audio duration to max 150ms to work at high BPMs
+            // At 240 BPM, interval is 250ms, so 150ms leaves 100ms gap for clean separation
+            let maxDuration: Double = 0.15  // 150ms
+            let maxFrames = AVAudioFrameCount(maxDuration * fileFormat.sampleRate)
+            let framesToRead = min(AVAudioFrameCount(audioFile.length), maxFrames)
             
             guard let buffer = AVAudioPCMBuffer(
                 pcmFormat: fileFormat,
-                frameCapacity: AVAudioFrameCount(audioFile.length)
+                frameCapacity: framesToRead
             ) else {
                 print("❌ Failed to create buffer for audio file")
                 generateFallbackClickSound()
                 return
             }
             
-            try audioFile.read(into: buffer)
+            // Read only the first portion of the file (up to maxDuration)
+            buffer.frameLength = framesToRead
+            try audioFile.read(into: buffer, frameCount: framesToRead)
+            
+            // First, try to trim silence from the audio
+            var processedBuffer = buffer
+            if let trimmedBuffer = trimSilence(from: buffer) {
+                processedBuffer = trimmedBuffer
+            }
+            
+            // Then check if we still need to trim for length (after silence removal)
+            let currentDuration = Double(processedBuffer.frameLength) / fileFormat.sampleRate
+            if currentDuration > maxDuration {
+                let trimmedDuration = Double(framesToRead) / fileFormat.sampleRate
+                print("✂️ Audio still too long after silence removal: \(String(format: "%.3f", currentDuration))s → \(String(format: "%.3f", trimmedDuration))s")
+                
+                // Need to trim further and apply fade-out
+                applyFadeOut(to: processedBuffer, fadeOutDurationMs: 20)
+            }
             
             // Convert to engine's format (stereo, 44.1kHz)
             let targetFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
             
             if fileFormat.channelCount != targetFormat.channelCount || 
                fileFormat.sampleRate != targetFormat.sampleRate {
-                guard let convertedBuffer = convertBuffer(buffer, to: targetFormat) else {
+                guard let convertedBuffer = convertBuffer(processedBuffer, to: targetFormat) else {
                     print("❌ Failed to convert buffer to target format")
                     generateFallbackClickSound()
                     return
@@ -217,7 +243,7 @@ final class MetronomeEngine {
                 self.clickBuffer = convertedBuffer
                 print("✅ Converted audio: \(fileFormat.channelCount)ch@\(fileFormat.sampleRate)Hz -> \(targetFormat.channelCount)ch@\(targetFormat.sampleRate)Hz")
             } else {
-                self.clickBuffer = buffer
+                self.clickBuffer = processedBuffer
             }
             
             print("✅ Loaded audio file: \(filename).\(fileExtension)")
@@ -288,6 +314,122 @@ final class MetronomeEngine {
         }
         
         return outputBuffer
+    }
+    
+    /// Detects and removes leading/trailing silence from an audio buffer
+    /// Returns a new trimmed buffer, or nil if trimming fails
+    private func trimSilence(from buffer: AVAudioPCMBuffer, silenceThreshold: Float = 0.01) -> AVAudioPCMBuffer? {
+        let format = buffer.format
+        let frameLength = Int(buffer.frameLength)
+        
+        guard let channelData = buffer.floatChannelData else { return nil }
+        
+        // Find first non-silent frame (scan all channels)
+        var firstSoundFrame = frameLength
+        for frame in 0..<frameLength {
+            var isSilent = true
+            for channel in 0..<Int(format.channelCount) {
+                if abs(channelData[channel][frame]) > silenceThreshold {
+                    isSilent = false
+                    break
+                }
+            }
+            if !isSilent {
+                firstSoundFrame = frame
+                break
+            }
+        }
+        
+        // Find last non-silent frame (scan backwards)
+        var lastSoundFrame = 0
+        for frame in stride(from: frameLength - 1, through: 0, by: -1) {
+            var isSilent = true
+            for channel in 0..<Int(format.channelCount) {
+                if abs(channelData[channel][frame]) > silenceThreshold {
+                    isSilent = false
+                    break
+                }
+            }
+            if !isSilent {
+                lastSoundFrame = frame
+                break
+            }
+        }
+        
+        // Calculate padding (5ms on each side)
+        let paddingSamples = Int(0.005 * format.sampleRate)
+        
+        // Apply padding but stay within bounds
+        let trimStart = max(0, firstSoundFrame - paddingSamples)
+        let trimEnd = min(frameLength - 1, lastSoundFrame + paddingSamples)
+        
+        // If nothing to trim, return original
+        if trimStart == 0 && trimEnd == frameLength - 1 {
+            return nil
+        }
+        
+        // Calculate new length
+        let newLength = trimEnd - trimStart + 1
+        
+        guard newLength > 0 else { return nil }
+        
+        // Create new buffer with trimmed length
+        guard let trimmedBuffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(newLength)
+        ) else {
+            return nil
+        }
+        
+        trimmedBuffer.frameLength = AVAudioFrameCount(newLength)
+        
+        guard let trimmedChannelData = trimmedBuffer.floatChannelData else {
+            return nil
+        }
+        
+        // Copy trimmed audio data
+        for channel in 0..<Int(format.channelCount) {
+            let sourceData = channelData[channel]
+            let destData = trimmedChannelData[channel]
+            
+            for frame in 0..<newLength {
+                destData[frame] = sourceData[trimStart + frame]
+            }
+        }
+        
+        let originalDuration = Double(frameLength) / format.sampleRate
+        let trimmedDuration = Double(newLength) / format.sampleRate
+        let savedMs = (originalDuration - trimmedDuration) * 1000.0
+        
+        print("✂️ Trimmed silence: \(String(format: "%.3f", originalDuration))s → \(String(format: "%.3f", trimmedDuration))s (saved \(String(format: "%.0f", savedMs))ms)")
+        
+        return trimmedBuffer
+    }
+    
+    /// Applies a fade-out envelope to prevent clicks when audio is trimmed
+    private func applyFadeOut(to buffer: AVAudioPCMBuffer, fadeOutDurationMs: Double) {
+        let format = buffer.format
+        let frameLength = Int(buffer.frameLength)
+        let sampleRate = format.sampleRate
+        let fadeOutSamples = Int(fadeOutDurationMs / 1000.0 * sampleRate)
+        
+        // Start fade-out from this frame index
+        let fadeStartFrame = max(0, frameLength - fadeOutSamples)
+        
+        guard let channelData = buffer.floatChannelData else { return }
+        
+        // Apply fade-out to all channels
+        for channel in 0..<Int(format.channelCount) {
+            let data = channelData[channel]
+            
+            for frame in fadeStartFrame..<frameLength {
+                let fadePosition = Float(frame - fadeStartFrame) / Float(fadeOutSamples)
+                let envelope = 1.0 - fadePosition  // Linear fade from 1.0 to 0.0
+                data[frame] *= envelope
+            }
+        }
+        
+        print("🎚️ Applied \(String(format: "%.0f", fadeOutDurationMs))ms fade-out to audio")
     }
     
     // MARK: - Sound Generators
