@@ -8,34 +8,25 @@
 import AVFoundation
 import Foundation
 
-/// Available beat sound types
+/// Available beat sound pairs (high sound for downbeat, low sound for other beats)
 enum BeatSound: String, CaseIterable, Identifiable {
-    case selectButton = "Select Button"
-    case cowbell = "Cowbell"
-    case kickDrum = "Kick Drum"
-    case rimClick = "Rim Click"
-    case woodBlock = "Wood Block"
-    case snare = "Snare"
-    case classicClick = "Classic Click"
+    case selectButtonFishBowl = "Select Button / Fish Bowl"
+    case cowbellKickDrum = "Cowbell / Kick Drum"
+    case rimClickWoodBlock = "Rim Click / Wood Block"
+    case snareClassicClick = "Snare / Classic Click"
     
     var id: String { rawValue }
     
     var description: String {
         switch self {
-        case .selectButton:
-            return "Clean, modern UI button sound"
-        case .kickDrum:
-            return "Deep, punchy low-frequency drum"
-        case .rimClick:
-            return "Sharp, bright metallic click"
-        case .woodBlock:
-            return "High-pitched, short woody sound"
-        case .cowbell:
-            return "Metallic bell with long sustain"
-        case .snare:
-            return "Crisp drum with snare wires"
-        case .classicClick:
-            return "Traditional metronome click"
+        case .selectButtonFishBowl:
+            return "Select Button for downbeat, Fish Bowl for other beats"
+        case .cowbellKickDrum:
+            return "Cowbell for downbeat, Kick Drum for other beats"
+        case .rimClickWoodBlock:
+            return "Rim Click for downbeat, Wood Block for other beats"
+        case .snareClassicClick:
+            return "Snare for downbeat, Classic Click for other beats"
         }
     }
 }
@@ -56,7 +47,7 @@ final class MetronomeEngine {
     private var isRunning = false
     private var currentBPM: Double = 100.0
     private var currentVolume: Float = 0.8
-    private var currentSound: BeatSound = .selectButton  // Default to select button sound
+    private var currentSound: BeatSound = .selectButtonFishBowl  // Default to select button / fish bowl pair
     private var currentSignature = RhythmicSignature.fourFour
     private var currentBeatInPattern: Int = 0
     private var scheduledBeatsCount: Int = 0  // Track how many beats we've scheduled ahead
@@ -115,26 +106,25 @@ final class MetronomeEngine {
     
     /// Generates a drum-like beat sound programmatically based on the selected sound type.
     /// For audio files, loads from bundle instead of generating.
+    /// Generates the LOW sound for regular beats (beats 2, 3, 4, etc.)
+    /// For sound pairs, this is the second sound in the pair name.
     private func generateClickSound(for sound: BeatSound) {
-        // For select button, load from audio file
-        if sound == .selectButton {
-            loadAudioFile(named: "select-button-sfx", extension: "wav")
+        // For audio file pairs, load the LOW sound
+        if sound == .selectButtonFishBowl {
+            loadAudioFile(named: "fish_bowl_sound", extension: "wav", isAccent: false)
             return
         }
         
-        // For other sounds, generate programmatically in stereo
+        // For generated sound pairs, generate the LOW sound programmatically in stereo
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         
         // Duration varies by sound type
         let clickDuration: Double
         switch sound {
-        case .selectButton: return  // Already handled above
-        case .kickDrum: clickDuration = 0.08
-        case .rimClick: clickDuration = 0.03
-        case .woodBlock: clickDuration = 0.025
-        case .cowbell: clickDuration = 0.15
-        case .snare: clickDuration = 0.06
-        case .classicClick: clickDuration = 0.015
+        case .selectButtonFishBowl: return  // Already handled above
+        case .cowbellKickDrum: clickDuration = 0.08  // Kick Drum
+        case .rimClickWoodBlock: clickDuration = 0.025  // Wood Block
+        case .snareClassicClick: clickDuration = 0.015  // Classic Click
         }
         
         let frameCount = AVAudioFrameCount(sampleRate * clickDuration)
@@ -152,25 +142,19 @@ final class MetronomeEngine {
             return
         }
         
-        // Generate sound based on type (same for both channels - mono content in stereo format)
+        // Generate LOW sound based on pair (same for both channels - mono content in stereo format)
         switch sound {
-        case .selectButton: break  // Already handled
-        case .kickDrum:
+        case .selectButtonFishBowl: break  // Already handled above with audio files
+        case .cowbellKickDrum:
+            // Kick Drum for regular beats
             generateKickDrum(channelData: leftChannel, frameCount: frameCount)
             generateKickDrum(channelData: rightChannel, frameCount: frameCount)
-        case .rimClick:
-            generateRimClick(channelData: leftChannel, frameCount: frameCount)
-            generateRimClick(channelData: rightChannel, frameCount: frameCount)
-        case .woodBlock:
+        case .rimClickWoodBlock:
+            // Wood Block for regular beats
             generateWoodBlock(channelData: leftChannel, frameCount: frameCount)
             generateWoodBlock(channelData: rightChannel, frameCount: frameCount)
-        case .cowbell:
-            generateCowbell(channelData: leftChannel, frameCount: frameCount)
-            generateCowbell(channelData: rightChannel, frameCount: frameCount)
-        case .snare:
-            generateSnare(channelData: leftChannel, frameCount: frameCount)
-            generateSnare(channelData: rightChannel, frameCount: frameCount)
-        case .classicClick:
+        case .snareClassicClick:
+            // Classic Click for regular beats
             generateClassicClick(channelData: leftChannel, frameCount: frameCount)
             generateClassicClick(channelData: rightChannel, frameCount: frameCount)
         }
@@ -179,11 +163,15 @@ final class MetronomeEngine {
     }
     
     /// Loads an audio file from the bundle and converts it to a PCM buffer
-    private func loadAudioFile(named filename: String, extension fileExtension: String) {
+    /// - Parameters:
+    ///   - filename: The name of the audio file (without extension)
+    ///   - fileExtension: The file extension (e.g., "wav")
+    ///   - isAccent: If true, loads into accentBuffer; if false, loads into clickBuffer
+    private func loadAudioFile(named filename: String, extension fileExtension: String, isAccent: Bool = false) {
         guard let url = Bundle.main.url(forResource: filename, withExtension: fileExtension) else {
             print("❌ Failed to find audio file: \(filename).\(fileExtension)")
             // Fallback to generated classic click sound
-            generateFallbackClickSound()
+            generateFallbackClickSound(isAccent: isAccent)
             return
         }
         
@@ -206,7 +194,7 @@ final class MetronomeEngine {
                 frameCapacity: framesToRead
             ) else {
                 print("❌ Failed to create buffer for audio file")
-                generateFallbackClickSound()
+                generateFallbackClickSound(isAccent: isAccent)
                 return
             }
             
@@ -237,25 +225,35 @@ final class MetronomeEngine {
                fileFormat.sampleRate != targetFormat.sampleRate {
                 guard let convertedBuffer = convertBuffer(processedBuffer, to: targetFormat) else {
                     print("❌ Failed to convert buffer to target format")
-                    generateFallbackClickSound()
+                    generateFallbackClickSound(isAccent: isAccent)
                     return
                 }
-                self.clickBuffer = convertedBuffer
+                // Store in appropriate buffer based on isAccent flag
+                if isAccent {
+                    self.accentBuffer = convertedBuffer
+                } else {
+                    self.clickBuffer = convertedBuffer
+                }
                 print("✅ Converted audio: \(fileFormat.channelCount)ch@\(fileFormat.sampleRate)Hz -> \(targetFormat.channelCount)ch@\(targetFormat.sampleRate)Hz")
             } else {
-                self.clickBuffer = processedBuffer
+                // Store in appropriate buffer based on isAccent flag
+                if isAccent {
+                    self.accentBuffer = processedBuffer
+                } else {
+                    self.clickBuffer = processedBuffer
+                }
             }
             
-            print("✅ Loaded audio file: \(filename).\(fileExtension)")
+            print("✅ Loaded audio file: \(filename).\(fileExtension) into \(isAccent ? "accent" : "click") buffer")
             
         } catch {
             print("❌ Error loading audio file: \(error)")
-            generateFallbackClickSound()
+            generateFallbackClickSound(isAccent: isAccent)
         }
     }
     
     /// Generates a fallback click sound when audio file loading fails
-    private func generateFallbackClickSound() {
+    private func generateFallbackClickSound(isAccent: Bool = false) {
         print("⚠️ Using fallback classic click sound")
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         let clickDuration: Double = 0.015
@@ -271,7 +269,13 @@ final class MetronomeEngine {
         buffer.frameLength = frameCount
         generateClassicClick(channelData: leftChannel, frameCount: frameCount)
         generateClassicClick(channelData: rightChannel, frameCount: frameCount)
-        self.clickBuffer = buffer
+        
+        // Store in appropriate buffer based on isAccent flag
+        if isAccent {
+            self.accentBuffer = buffer
+        } else {
+            self.clickBuffer = buffer
+        }
     }
     
     /// Converts an audio buffer to a different format (sample rate and/or channels)
@@ -554,28 +558,25 @@ final class MetronomeEngine {
         }
     }
     
-    /// Generates an accented version of the click sound for the first beat.
-    /// The accent is created by increasing volume and adding a higher frequency component.
+    /// Generates the HIGH sound for the downbeat (beat 1).
+    /// For sound pairs, this is the first sound in the pair name.
     private func generateAccentSound(for sound: BeatSound) {
-        // For select button, use the same sound with volume boost (applied via player)
-        if sound == .selectButton {
-            // Use the same click buffer, accent will be handled by volume
-            self.accentBuffer = self.clickBuffer
+        // For audio file pairs, load the HIGH sound
+        if sound == .selectButtonFishBowl {
+            loadAudioFile(named: "select-button-sfx", extension: "wav", isAccent: true)
             return
         }
         
+        // For generated sound pairs, generate the HIGH sound programmatically in stereo
         let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
         
-        // Use same duration as regular click
+        // Duration varies by HIGH sound type
         let clickDuration: Double
         switch sound {
-        case .selectButton: return  // Already handled above
-        case .kickDrum: clickDuration = 0.08
-        case .rimClick: clickDuration = 0.03
-        case .woodBlock: clickDuration = 0.025
-        case .cowbell: clickDuration = 0.15
-        case .snare: clickDuration = 0.06
-        case .classicClick: clickDuration = 0.015
+        case .selectButtonFishBowl: return  // Already handled above
+        case .cowbellKickDrum: clickDuration = 0.15  // Cowbell
+        case .rimClickWoodBlock: clickDuration = 0.03  // Rim Click
+        case .snareClassicClick: clickDuration = 0.06  // Snare
         }
         
         let frameCount = AVAudioFrameCount(sampleRate * clickDuration)
@@ -593,45 +594,21 @@ final class MetronomeEngine {
             return
         }
         
-        // Generate the base sound for both channels
+        // Generate HIGH sound based on pair (same for both channels - mono content in stereo format)
         switch sound {
-        case .selectButton: break  // Already handled
-        case .kickDrum:
-            generateKickDrum(channelData: leftChannel, frameCount: frameCount)
-            generateKickDrum(channelData: rightChannel, frameCount: frameCount)
-        case .rimClick:
-            generateRimClick(channelData: leftChannel, frameCount: frameCount)
-            generateRimClick(channelData: rightChannel, frameCount: frameCount)
-        case .woodBlock:
-            generateWoodBlock(channelData: leftChannel, frameCount: frameCount)
-            generateWoodBlock(channelData: rightChannel, frameCount: frameCount)
-        case .cowbell:
+        case .selectButtonFishBowl: break  // Already handled above with audio files
+        case .cowbellKickDrum:
+            // Cowbell for downbeat
             generateCowbell(channelData: leftChannel, frameCount: frameCount)
             generateCowbell(channelData: rightChannel, frameCount: frameCount)
-        case .snare:
+        case .rimClickWoodBlock:
+            // Rim Click for downbeat
+            generateRimClick(channelData: leftChannel, frameCount: frameCount)
+            generateRimClick(channelData: rightChannel, frameCount: frameCount)
+        case .snareClassicClick:
+            // Snare for downbeat
             generateSnare(channelData: leftChannel, frameCount: frameCount)
             generateSnare(channelData: rightChannel, frameCount: frameCount)
-        case .classicClick:
-            generateClassicClick(channelData: leftChannel, frameCount: frameCount)
-            generateClassicClick(channelData: rightChannel, frameCount: frameCount)
-        }
-        
-        // Apply accent to both channels: increase volume by 30% and add subtle high-frequency ping
-        for frame in 0..<Int(frameCount) {
-            let time = Float(frame) / Float(sampleRate)
-            let normalizedTime = Float(frame) / Float(frameCount)
-            
-            // Add a brief high-frequency "ping" for accent clarity
-            let pingEnvelope = exp(-normalizedTime * 60.0)
-            let ping = sin(2.0 * .pi * 2400.0 * time) * pingEnvelope * 0.15
-            
-            // Apply to left channel
-            let boostedLeft = leftChannel[frame] * 1.3
-            leftChannel[frame] = min(max(boostedLeft + ping, -1.0), 1.0)
-            
-            // Apply to right channel
-            let boostedRight = rightChannel[frame] * 1.3
-            rightChannel[frame] = min(max(boostedRight + ping, -1.0), 1.0)
         }
         
         self.accentBuffer = buffer
@@ -830,8 +807,8 @@ final class MetronomeEngine {
         
         // Keep scheduling until we have enough beats in the queue
         while scheduledBeatsCount < maxScheduledBeats {
-            // Determine which buffer to use (accent for first beat, regular for others)
-            let isAccentBeat = (currentBeatInPattern == 0) && (currentSignature.numerator > 1)
+            // Determine which buffer to use (HIGH sound for beat 1, LOW sound for others)
+            let isAccentBeat = (currentBeatInPattern == 0)
             let buffer = isAccentBeat ? (accentBuffer ?? clickBuffer) : clickBuffer
             
             guard let buffer = buffer else {

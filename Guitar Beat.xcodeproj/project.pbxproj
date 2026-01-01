@@ -7,10 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3D5D3A332F0724100074DB45 /* fish_bowl_sound.wav in Resources */ = {isa = PBXBuildFile; fileRef = 3D5D3A322F0724100074DB45 /* fish_bowl_sound.wav */; };
+		3D5D3A352F0727F40074DB45 /* SOUND_PAIRS_FEATURE.md in Resources */ = {isa = PBXBuildFile; fileRef = 3D5D3A342F0727F40074DB45 /* SOUND_PAIRS_FEATURE.md */; };
+		3D5D3A372F0728210074DB45 /* SOUND_PAIRS_TEST_PLAN.md in Resources */ = {isa = PBXBuildFile; fileRef = 3D5D3A362F0728210074DB45 /* SOUND_PAIRS_TEST_PLAN.md */; };
 		3DCB4F482EFA2389000FA3CF /* select-button-sfx.wav in Resources */ = {isa = PBXBuildFile; fileRef = 3DCB4F472EFA2389000FA3CF /* select-button-sfx.wav */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		3D5D3A322F0724100074DB45 /* fish_bowl_sound.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = fish_bowl_sound.wav; sourceTree = "<group>"; };
+		3D5D3A342F0727F40074DB45 /* SOUND_PAIRS_FEATURE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SOUND_PAIRS_FEATURE.md; sourceTree = "<group>"; };
+		3D5D3A362F0728210074DB45 /* SOUND_PAIRS_TEST_PLAN.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SOUND_PAIRS_TEST_PLAN.md; sourceTree = "<group>"; };
 		3DCB4F252EF9A96D000FA3CF /* Guitar Beat.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Guitar Beat.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DCB4F472EFA2389000FA3CF /* select-button-sfx.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "select-button-sfx.wav"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -55,6 +61,9 @@
 			isa = PBXGroup;
 			children = (
 				3DCB4F472EFA2389000FA3CF /* select-button-sfx.wav */,
+				3D5D3A322F0724100074DB45 /* fish_bowl_sound.wav */,
+				3D5D3A342F0727F40074DB45 /* SOUND_PAIRS_FEATURE.md */,
+				3D5D3A362F0728210074DB45 /* SOUND_PAIRS_TEST_PLAN.md */,
 			);
 			path = Sounds;
 			sourceTree = "<group>";
@@ -123,7 +132,10 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3D5D3A352F0727F40074DB45 /* SOUND_PAIRS_FEATURE.md in Resources */,
+				3D5D3A332F0724100074DB45 /* fish_bowl_sound.wav in Resources */,
 				3DCB4F482EFA2389000FA3CF /* select-button-sfx.wav in Resources */,
+				3D5D3A372F0728210074DB45 /* SOUND_PAIRS_TEST_PLAN.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

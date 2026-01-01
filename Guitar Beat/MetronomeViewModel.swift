@@ -27,7 +27,7 @@ final class MetronomeViewModel: ObservableObject {
         }
     }
     
-    @Published var beatSound: BeatSound = .selectButton {
+    @Published var beatSound: BeatSound = .selectButtonFishBowl {
         didSet {
             engine.setBeatSound(beatSound)
         }
