@@ -92,12 +92,18 @@ final class MetronomeViewModel: ObservableObject {
         currentBeatIndex = 0  // Reset visualization
         engine.start()
         isPlaying = true
+        
+        // Disable idle timer to keep screen awake
+        UIApplication.shared.isIdleTimerDisabled = true
     }
     
     func stop() {
         engine.stop()
         isPlaying = false
         currentBeatIndex = 0  // Reset visualization
+        
+        // Re-enable idle timer
+        UIApplication.shared.isIdleTimerDisabled = false
     }
     
     func incrementBPM() {
@@ -115,6 +121,8 @@ final class MetronomeViewModel: ObservableObject {
         NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)
             .sink { [weak self] _ in
                 self?.stop()
+                // Ensure idle timer is re-enabled when app goes to background
+                UIApplication.shared.isIdleTimerDisabled = false
             }
             .store(in: &cancellables)
         
