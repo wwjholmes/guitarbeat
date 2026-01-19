@@ -27,6 +27,7 @@
 		3DE9F1EC2F1DED0F00D9E61A /* DOCUMENTATION_UPDATE_CHECKLIST.md in Resources */ = {isa = PBXBuildFile; fileRef = 3DE9F1EB2F1DED0F00D9E61A /* DOCUMENTATION_UPDATE_CHECKLIST.md */; };
 		3DE9F1EE2F1DED3700D9E61A /* DOCUMENTATION_REVIEW_SUMMARY.md in Resources */ = {isa = PBXBuildFile; fileRef = 3DE9F1ED2F1DED3700D9E61A /* DOCUMENTATION_REVIEW_SUMMARY.md */; };
 		3DE9F1F02F1DED4C00D9E61A /* DOCS_QUICK_REFERENCE.md in Resources */ = {isa = PBXBuildFile; fileRef = 3DE9F1EF2F1DED4C00D9E61A /* DOCS_QUICK_REFERENCE.md */; };
+		3DE9F1F22F1DF31500D9E61A /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = 3DE9F1F12F1DF31500D9E61A /* AGENTS.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,6 +52,7 @@
 		3DE9F1EB2F1DED0F00D9E61A /* DOCUMENTATION_UPDATE_CHECKLIST.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DOCUMENTATION_UPDATE_CHECKLIST.md; sourceTree = "<group>"; };
 		3DE9F1ED2F1DED3700D9E61A /* DOCUMENTATION_REVIEW_SUMMARY.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DOCUMENTATION_REVIEW_SUMMARY.md; sourceTree = "<group>"; };
 		3DE9F1EF2F1DED4C00D9E61A /* DOCS_QUICK_REFERENCE.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = DOCS_QUICK_REFERENCE.md; sourceTree = "<group>"; };
+		3DE9F1F12F1DF31500D9E61A /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -112,6 +114,7 @@
 				3DE9F1EB2F1DED0F00D9E61A /* DOCUMENTATION_UPDATE_CHECKLIST.md */,
 				3DE9F1ED2F1DED3700D9E61A /* DOCUMENTATION_REVIEW_SUMMARY.md */,
 				3DE9F1EF2F1DED4C00D9E61A /* DOCS_QUICK_REFERENCE.md */,
+				3DE9F1F12F1DF31500D9E61A /* AGENTS.md */,
 			);
 			path = Sounds;
 			sourceTree = "<group>";
@@ -199,6 +202,7 @@
 				3DCB4F482EFA2389000FA3CF /* select-button-sfx.wav in Resources */,
 				3D5D3A372F0728210074DB45 /* SOUND_PAIRS_TEST_PLAN.md in Resources */,
 				3DE9F1DE2F1DA3A800D9E61A /* TIMING_FIX.md in Resources */,
+				3DE9F1F22F1DF31500D9E61A /* AGENTS.md in Resources */,
 				3DE9F1D22F1D9D5400D9E61A /* SUBDIVISION_FEATURE.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
