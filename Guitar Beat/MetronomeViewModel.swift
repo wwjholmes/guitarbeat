@@ -41,6 +41,12 @@ final class MetronomeViewModel: ObservableObject {
         }
     }
     
+    @Published var subdivision: Int = 1 {
+        didSet {
+            engine.setSubdivision(subdivision)
+        }
+    }
+    
     @Published var isPlaying: Bool = false
     
     // Visualization state
@@ -65,6 +71,7 @@ final class MetronomeViewModel: ObservableObject {
         engine.setBPM(bpm)
         engine.setVolume(volume)
         engine.setSignature(signature)  // Set the signature!
+        engine.setSubdivision(subdivision)  // Set the subdivision!
         
         // Set up beat tick callback for visualization
         engine.onBeatTick = { [weak self] beatIndex in

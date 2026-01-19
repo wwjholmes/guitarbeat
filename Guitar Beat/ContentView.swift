@@ -11,6 +11,7 @@ struct ContentView: View {
     @StateObject private var viewModel = MetronomeViewModel()
     @State private var showSoundPicker = false
     @State private var showSignaturePicker = false
+    @State private var showSubdivisionPicker = false
     @State private var localBPM: Double = 60.0
     @State private var bpmUpdateTask: Task<Void, Never>?
     
@@ -59,27 +60,55 @@ struct ContentView: View {
                     .foregroundColor(.white.opacity(0.5))
                     .tracking(1)
                 
-                // Rhythmic signature display with tap to change
-                Button(action: { showSignaturePicker.toggle() }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "music.note.list")
-                            .font(.caption2)
-                        
-                        Text(viewModel.signature.displayString)
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                        
-                        Image(systemName: "chevron.down")
-                            .font(.caption2)
+                // Rhythmic signature and subdivision controls
+                HStack(spacing: 12) {
+                    // Signature button
+                    Button(action: { showSignaturePicker.toggle() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "music.note.list")
+                                .font(.caption2)
+                            
+                            Text(viewModel.signature.displayString)
+                                .font(.title3)
+                                .fontWeight(.semibold)
+                                .monospacedDigit()
+                            
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.1))
+                        )
                     }
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.white.opacity(0.1))
-                    )
+                    
+                    // Subdivision button
+                    Button(action: { showSubdivisionPicker.toggle() }) {
+                        HStack(spacing: 6) {
+                            Text("♩")
+                                .font(.title3)
+                            
+                            if viewModel.subdivision > 1 {
+                                Text("×\(viewModel.subdivision)")
+                                    .font(.title3)
+                                    .fontWeight(.semibold)
+                                    .monospacedDigit()
+                            }
+                            
+                            Image(systemName: "chevron.down")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.white.opacity(0.1))
+                        )
+                    }
                 }
                 
                 // Beat visualization (always visible)
@@ -197,6 +226,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showSignaturePicker) {
             SignaturePickerView(selectedSignature: $viewModel.signature)
+        }
+        .sheet(isPresented: $showSubdivisionPicker) {
+            SubdivisionPickerView(selectedSubdivision: $viewModel.subdivision)
         }
         .onAppear {
             localBPM = viewModel.bpm
@@ -506,6 +538,176 @@ struct PresetButton: View {
     var body: some View {
         Button(action: action) {
             Text(signature.displayString)
+                .font(.callout)
+                .fontWeight(.medium)
+                .foregroundColor(.white)
+                .frame(width: 70, height: 36)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.15))
+                )
+        }
+    }
+}
+
+// MARK: - Subdivision Picker View
+
+struct SubdivisionPickerView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Binding var selectedSubdivision: Int
+    
+    @State private var localSubdivision: Int
+    
+    init(selectedSubdivision: Binding<Int>) {
+        self._selectedSubdivision = selectedSubdivision
+        self._localSubdivision = State(initialValue: selectedSubdivision.wrappedValue)
+    }
+    
+    var body: some View {
+        NavigationView {
+            ZStack {
+                Color(white: 0.08).ignoresSafeArea()
+                
+                VStack(spacing: 30) {
+                    // Title and explanation
+                    VStack(spacing: 8) {
+                        Text("Subdivision")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.white)
+                        
+                        Text("Choose how many clicks per beat")
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding(.top, 20)
+                    
+                    // Large display of current selection
+                    HStack(spacing: 12) {
+                        Text("♩")
+                            .font(.system(size: 72))
+                            .foregroundColor(.white)
+                        
+                        if localSubdivision > 1 {
+                            Text("×")
+                                .font(.system(size: 48, weight: .ultraLight))
+                                .foregroundColor(.white.opacity(0.5))
+                            
+                            Text("\(localSubdivision)")
+                                .font(.system(size: 72, weight: .ultraLight, design: .rounded))
+                                .foregroundColor(.white)
+                                .monospacedDigit()
+                        }
+                    }
+                    .padding(.vertical, 20)
+                    
+                    // Description
+                    Text(subdivisionDescription)
+                        .font(.callout)
+                        .foregroundColor(.white.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 40)
+                        .frame(height: 50)
+                    
+                    // Wheel-style picker
+                    Picker("Subdivision", selection: $localSubdivision) {
+                        ForEach([1, 2, 3, 4], id: \.self) { value in
+                            Text(subdivisionLabel(value))
+                                .font(.title)
+                                .foregroundColor(.white)
+                                .tag(value)
+                        }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(height: 180)
+                    
+                    Spacer()
+                    
+                    // Quick presets
+                    VStack(spacing: 12) {
+                        Text("Quick Select")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.5))
+                            .tracking(1)
+                        
+                        HStack(spacing: 12) {
+                            SubdivisionPresetButton(value: 1, label: "♩") {
+                                localSubdivision = 1
+                            }
+                            
+                            SubdivisionPresetButton(value: 2, label: "♩×2") {
+                                localSubdivision = 2
+                            }
+                            
+                            SubdivisionPresetButton(value: 3, label: "♩×3") {
+                                localSubdivision = 3
+                            }
+                            
+                            SubdivisionPresetButton(value: 4, label: "♩×4") {
+                                localSubdivision = 4
+                            }
+                        }
+                    }
+                    .padding(.bottom, 30)
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .foregroundColor(.white.opacity(0.7))
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Apply") {
+                        selectedSubdivision = localSubdivision
+                        dismiss()
+                    }
+                    .foregroundColor(.green)
+                    .fontWeight(.semibold)
+                }
+            }
+            .toolbarBackground(Color(white: 0.1), for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+        }
+    }
+    
+    private var subdivisionDescription: String {
+        switch localSubdivision {
+        case 1:
+            return "One click per beat"
+        case 2:
+            return "Two clicks per beat (eighth notes)"
+        case 3:
+            return "Three clicks per beat (triplets)"
+        case 4:
+            return "Four clicks per beat (sixteenth notes)"
+        default:
+            return "\(localSubdivision) clicks per beat"
+        }
+    }
+    
+    private func subdivisionLabel(_ value: Int) -> String {
+        if value == 1 {
+            return "♩"
+        } else {
+            return "♩ × \(value)"
+        }
+    }
+}
+
+// MARK: - Subdivision Preset Button
+
+struct SubdivisionPresetButton: View {
+    let value: Int
+    let label: String
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(label)
                 .font(.callout)
                 .fontWeight(.medium)
                 .foregroundColor(.white)

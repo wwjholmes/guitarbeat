@@ -49,6 +49,8 @@ final class MetronomeEngine {
     private var currentVolume: Float = 0.8
     private var currentSound: BeatSound = .selectButtonFishBowl  // Default to select button / fish bowl pair
     private var currentSignature = RhythmicSignature.fourFour
+    private var currentSubdivision: Int = 1  // Number of clicks per beat (1-4)
+    private var clicksInCurrentBeat: Int = 0  // Track clicks within the current beat
     private var currentBeatInPattern: Int = 0
     private var scheduledBeatsCount: Int = 0  // Track how many beats we've scheduled ahead
     private let maxScheduledBeats = 1  // Keep only 1 beat scheduled ahead for faster sound switching
@@ -625,13 +627,14 @@ final class MetronomeEngine {
         // Don't reset when restarting after signature change (smart remapping already handled it)
         if resetBeatPosition {
             currentBeatInPattern = 0
+            clicksInCurrentBeat = 0  // Reset subdivision counter
         }
         
         nextBeatSampleTime = 0  // Reset timing
         scheduledBeatsCount = 0  // Reset scheduled count
         lastBeatTime = Date()  // Initialize beat timing
         
-        print("🚀 Starting metronome: BPM=\(currentBPM), Signature=\(currentSignature.numerator)/\(currentSignature.denominator), Beat position: \(currentBeatInPattern)")
+        print("🚀 Starting metronome: BPM=\(currentBPM), Signature=\(currentSignature.numerator)/\(currentSignature.denominator), Subdivision=\(currentSubdivision), Beat position: \(currentBeatInPattern)")
         print("🔊 Volume: \(currentVolume), PlayerNode volume: \(playerNode.volume)")
         print("🎵 Click buffer: \(clickBuffer != nil ? "✅" : "❌"), Accent buffer: \(accentBuffer != nil ? "✅" : "❌")")
         
@@ -663,6 +666,9 @@ final class MetronomeEngine {
         
         // Stop playback
         playerNode.stop()
+        
+        // Reset click counter for clean restart
+        clicksInCurrentBeat = 0
     }
     
     func setBPM(_ bpm: Double) {
@@ -749,6 +755,30 @@ final class MetronomeEngine {
         }
     }
     
+    func setSubdivision(_ subdivision: Int) {
+        // Validate subdivision range (1-4)
+        let validSubdivision = min(max(subdivision, 1), 4)
+        currentSubdivision = validSubdivision
+        
+        // Reset click counter when subdivision changes
+        clicksInCurrentBeat = 0
+        
+        print("🎼 Subdivision changed to \(validSubdivision) clicks per beat")
+        
+        // If running, restart to apply new subdivision immediately
+        if isRunning {
+            stop()
+            
+            // Short delay before restarting
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                guard let self = self else { return }
+                if !self.isRunning {
+                    self.start(resetBeatPosition: false)
+                }
+            }
+        }
+    }
+    
     var volume: Float {
         currentVolume
     }
@@ -801,37 +831,45 @@ final class MetronomeEngine {
     
     /// Schedules the next click buffer at the appropriate audio time.
     /// This approach uses the audio engine's time system for drift-free precision.
-    /// Accounts for rhythmic signature to calculate proper intervals.
+    /// Accounts for rhythmic signature and subdivision to calculate proper intervals.
     private func scheduleNextClick() {
         guard isRunning else { return }
         
         // Keep scheduling until we have enough beats in the queue
         while scheduledBeatsCount < maxScheduledBeats {
-            // Determine which buffer to use (HIGH sound for beat 1, LOW sound for others)
-            let isAccentBeat = (currentBeatInPattern == 0)
+            // Store which beat and click we're ABOUT TO schedule
+            let beatThatWillSchedule = currentBeatInPattern
+            let clickThatWillSchedule = clicksInCurrentBeat
+            
+            // Determine which buffer to use
+            // HIGH sound (accent) for ALL clicks of beat 0 (first beat)
+            // LOW sound for all other beats
+            let isAccentBeat = (beatThatWillSchedule == 0)
             let buffer = isAccentBeat ? (accentBuffer ?? clickBuffer) : clickBuffer
             
             guard let buffer = buffer else {
-                print("❌ No buffer available for beat \(currentBeatInPattern)")
+                print("❌ No buffer available for beat \(beatThatWillSchedule)")
                 return
             }
             
-            // Calculate interval between beats in seconds using rhythmic signature
-            let intervalSeconds = currentSignature.intervalSeconds(at: currentBPM)
-            let intervalSamples = AVAudioFramePosition(intervalSeconds * sampleRate)
+            // Calculate interval between CLICKS (not beats) in seconds
+            // Beat interval is controlled by BPM and signature
+            let beatIntervalSeconds = currentSignature.intervalSeconds(at: currentBPM)
+            // Click interval is beat interval divided by subdivision
+            let clickIntervalSeconds = beatIntervalSeconds / Double(currentSubdivision)
+            let intervalSamples = AVAudioFramePosition(clickIntervalSeconds * sampleRate)
             
             // Get the current audio time
             if isFirstBeat {
                 // Schedule first beat immediately (uses currentBeatInPattern, not necessarily beat 0)
-                let beatThatWillPlay = currentBeatInPattern
-                print("🎵 Scheduling first beat immediately (beat \(beatThatWillPlay))")
+                print("🎵 Scheduling first click immediately (beat \(beatThatWillSchedule), click \(clickThatWillSchedule + 1)/\(currentSubdivision), accent: \(isAccentBeat))")
                 
                 // Use a weak self to avoid retain cycle
                 playerNode.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
-                    print("✅ Beat \(beatThatWillPlay) completion handler called")
+                    print("✅ Beat \(beatThatWillSchedule) click completion handler called")
                     self?.scheduleQueue.async {
                         self?.scheduledBeatsCount -= 1
-                        print("📉 Scheduled count after beat \(beatThatWillPlay): \(self?.scheduledBeatsCount ?? -1)")
+                        print("📉 Scheduled count after beat \(beatThatWillSchedule): \(self?.scheduledBeatsCount ?? -1)")
                     }
                 }
                 
@@ -842,15 +880,27 @@ final class MetronomeEngine {
                     print("⚠️ Cannot get player time after first beat")
                     isFirstBeat = false
                     scheduledBeatsCount += 1
-                    notifyBeatTick()
-                    currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
+                    
+                    // Only notify UI when this is the FIRST click of a beat
+                    if clickThatWillSchedule == 0 {
+                        notifyBeatTick()
+                    }
+                    
+                    // Increment click counter
+                    clicksInCurrentBeat += 1
+                    
+                    // Advance beat only when we've completed all clicks in this beat
+                    if clicksInCurrentBeat >= currentSubdivision {
+                        currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
+                        clicksInCurrentBeat = 0
+                    }
                     return
                 }
                 
-                // The next beat should play one interval from NOW in the player's timeline
+                // The next click should play one interval from NOW in the player's timeline
                 nextBeatSampleTime = playerTime.sampleTime + intervalSamples
                 
-                print("🎯 First beat timing: playerTime=\(playerTime.sampleTime), interval=\(intervalSamples), nextBeat=\(nextBeatSampleTime)")
+                print("🎯 First click timing: playerTime=\(playerTime.sampleTime), interval=\(intervalSamples), nextClick=\(nextBeatSampleTime)")
                 
                 isFirstBeat = false
                 scheduledBeatsCount += 1
@@ -858,13 +908,23 @@ final class MetronomeEngine {
                 // Track when this beat fires for signature change timing
                 lastBeatTime = Date()
                 
-                // Notify UI immediately with the ACTUAL current beat (not always 0)
-                notifyBeatTick()
+                // Only notify UI when this is the FIRST click of a beat
+                if clickThatWillSchedule == 0 {
+                    // Notify UI immediately with the ACTUAL current beat
+                    notifyBeatTick()
+                }
                 
-                // Increment for NEXT scheduling call
-                currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
+                // Increment click counter
+                clicksInCurrentBeat += 1
+                
+                // Advance beat only when we've completed all clicks in this beat
+                if clicksInCurrentBeat >= currentSubdivision {
+                    // Increment for NEXT beat
+                    currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
+                    clicksInCurrentBeat = 0
+                }
             } else {
-                // For subsequent beats, use precise timing
+                // For subsequent clicks, use precise timing
                 if nextBeatSampleTime == 0 {
                     // Initialize if needed
                     guard let now = playerNode.lastRenderTime,
@@ -873,11 +933,12 @@ final class MetronomeEngine {
                         return
                     }
                     nextBeatSampleTime = playerTime.sampleTime + intervalSamples
-                    print("🎯 Initialized timing: playerTime=\(playerTime.sampleTime), nextBeat=\(nextBeatSampleTime), interval=\(intervalSamples)")
+                    print("🎯 Initialized timing: playerTime=\(playerTime.sampleTime), nextClick=\(nextBeatSampleTime), interval=\(intervalSamples)")
                 }
                 
                 // Store which beat INDEX will play when this buffer plays
-                let beatThatWillPlay = currentBeatInPattern
+                let beatThatWillPlay = beatThatWillSchedule
+                let clickInBeat = clickThatWillSchedule + 1
                 
                 // Calculate delay for UI notification
                 // We need to convert player time back to real time for the dispatch delay
@@ -890,37 +951,42 @@ final class MetronomeEngine {
                 let delayInSamples = nextBeatSampleTime - currentPlayerTime.sampleTime
                 let delayInSeconds = max(0, Double(delayInSamples) / sampleRate)
                 
-                print("⏱️ Beat \(beatThatWillPlay): nextBeatSampleTime=\(nextBeatSampleTime), currentPlayerTime=\(currentPlayerTime.sampleTime), delayInSeconds=\(String(format: "%.3f", delayInSeconds))s, scheduled=\(scheduledBeatsCount)")
+                print("⏱️ Beat \(beatThatWillPlay) click \(clickInBeat)/\(currentSubdivision): nextSampleTime=\(nextBeatSampleTime), currentPlayerTime=\(currentPlayerTime.sampleTime), delayInSeconds=\(String(format: "%.3f", delayInSeconds))s, accent: \(isAccentBeat))")
                 
-                // Create a unique ID for this work item
-                let workItemID = UUID()
+                // Schedule UI notification when we're about to play the FIRST click of a beat
+                let isFirstClickOfBeat = (clickThatWillSchedule == 0)
                 
-                // Schedule UI notification when beat plays using DispatchWorkItem for cancellation
-                let workItem = DispatchWorkItem { [weak self] in
-                    guard let self = self else { return }
+                if isFirstClickOfBeat {
+                    // Create a unique ID for this work item
+                    let workItemID = UUID()
                     
-                    // Track when this beat fires for signature change timing
-                    self.lastBeatTime = Date()
-                    
-                    // Notify the UI
-                    self.onBeatTick?(beatThatWillPlay)
-                    
-                    // Clean up: remove completed work items from the array
-                    self.notificationLock.lock()
-                    // Only remove the first item since we process in order (FIFO)
-                    if !self.pendingUINotifications.isEmpty {
-                        self.pendingUINotifications.removeFirst()
+                    // Schedule UI notification when this beat's first click plays
+                    let workItem = DispatchWorkItem { [weak self] in
+                        guard let self = self else { return }
+                        
+                        // Track when this beat fires for signature change timing
+                        self.lastBeatTime = Date()
+                        
+                        // Notify the UI - this will highlight the block
+                        self.onBeatTick?(beatThatWillPlay)
+                        
+                        // Clean up: remove completed work items from the array
+                        self.notificationLock.lock()
+                        // Only remove the first item since we process in order (FIFO)
+                        if !self.pendingUINotifications.isEmpty {
+                            self.pendingUINotifications.removeFirst()
+                        }
+                        self.notificationLock.unlock()
                     }
-                    self.notificationLock.unlock()
+                    
+                    // Store work item so it can be cancelled if needed
+                    notificationLock.lock()
+                    pendingUINotifications.append(workItem)
+                    notificationLock.unlock()
+                    
+                    // Schedule the work item
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delayInSeconds, execute: workItem)
                 }
-                
-                // Store work item so it can be cancelled if needed
-                notificationLock.lock()
-                pendingUINotifications.append(workItem)
-                notificationLock.unlock()
-                
-                // Schedule the work item
-                DispatchQueue.main.asyncAfter(deadline: .now() + delayInSeconds, execute: workItem)
                 
                 // Schedule next click at the calculated time in player's timeline
                 let nextBeatTime = AVAudioTime(
@@ -929,21 +995,27 @@ final class MetronomeEngine {
                 )
                 
                 playerNode.scheduleBuffer(buffer, at: nextBeatTime, options: []) { [weak self] in
-                    print("✅ Beat \(beatThatWillPlay) completion handler called")
+                    print("✅ Beat \(beatThatWillPlay) click \(clickInBeat) completion handler called")
                     self?.scheduleQueue.async {
                         self?.scheduledBeatsCount -= 1
-                        print("📉 Scheduled count after beat \(beatThatWillPlay): \(self?.scheduledBeatsCount ?? -1)")
+                        print("📉 Scheduled count after beat \(beatThatWillPlay) click \(clickInBeat): \(self?.scheduledBeatsCount ?? -1)")
                     }
                 }
                 
                 scheduledBeatsCount += 1
-                print("📈 Scheduled beat \(beatThatWillPlay), new count: \(scheduledBeatsCount)")
+                print("📈 Scheduled beat \(beatThatWillPlay) click \(clickInBeat), new count: \(scheduledBeatsCount)")
                 
-                // Increment for next beat
+                // Increment for next click
                 nextBeatSampleTime += intervalSamples
                 
-                // Increment for NEXT scheduling call
-                currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
+                // Increment click counter
+                clicksInCurrentBeat += 1
+                
+                // Only advance beat when we've completed all clicks in this beat
+                if clicksInCurrentBeat >= currentSubdivision {
+                    currentBeatInPattern = (currentBeatInPattern + 1) % currentSignature.numerator
+                    clicksInCurrentBeat = 0
+                }
             }
         }
     }
